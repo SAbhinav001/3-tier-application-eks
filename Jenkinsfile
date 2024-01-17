@@ -4,7 +4,8 @@ pipeline {
         AWS_ACCESS_KEY_ID = credentials('AWS_ACCESS_KEY_ID')
         AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
         AWS_DEFAULT_REGION = "us-east-1"
-        image = "my-todo-app-django"
+        IMAGE = "my-app"
+        VERSION = "${env.BUILD_ID}"
 
     }
 
@@ -12,7 +13,7 @@ pipeline {
         stage('checkou SCM') {
             steps {
                script{
-                   checkout scmGit(branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/SAbhinav001/tf-2-tier-deployment.git']])
+                  git branch: 'main', url: 'https://github.com/SAbhinav001/custom_mod_2_tier_app.git'
                }
             }
         }
@@ -20,7 +21,7 @@ pipeline {
         stage('build') {
             steps {
                 echo 'build'
-                sh 'docker build -t ${image} .'
+                sh 'docker build -t ${IMAGE} .'
             }
         }
         
@@ -28,9 +29,9 @@ pipeline {
             steps {
                 echo 'push'
                 withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]){
-                    sh 'docker login -u $USERNAME -p $PASSWORD'
-                    sh 'docker tag ${image} $USERNAME/${image}'
-                    sh 'docker push $USERNAME/${image}'
+                    sh "docker login -u $USERNAME -p $PASSWORD"
+                    sh "docker tag ${IMAGE} $USERNAME/${IMAGE}:${VERSION}"
+                    sh "docker push $USERNAME/${IMAGE}:${VERSION}"
                 }
             }
         }
@@ -78,19 +79,16 @@ pipeline {
                     dir('terraform/eks') {
                         sh 'terraform $action --auto-approve'
                     }
+                     sh 'aws eks update-kubeconfig --name my-eks-cluster'
                 }
             }
         }
         
-        stage('Deploying Application') {
-            steps{
-                script{
-                    dir('k8s') {
-                        sh 'aws eks update-kubeconfig --name my-eks-cluster'
-                        sh 'kubectl apply -f deploymentService.yaml'
-                    }
+        stage('Trigger ManifestUpdate job') {
+                steps{
+                    echo "triggering updatemanifestjob"
+                    build job: 'updatemanifest', parameters: [string(name: 'DOCKERTAG', value: "${VERSION}")]
                 }
-            }
         }
         
     }
